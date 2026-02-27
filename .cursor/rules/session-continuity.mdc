@@ -15,7 +15,21 @@ At the beginning of every new chat, **before doing any work**, read `.cursor/han
 
 ## On Session End
 
-When the user signals they are wrapping up (e.g. "that's it", "let's stop here", "wrap up", "done for now"), or when a major milestone is completed, write/overwrite `.cursor/handoff.md` with:
+When the user signals they are wrapping up (e.g. "that's it", "let's stop here", "wrap up", "done for now"), or when a major milestone is completed:
+
+### 1. Archive the current handoff
+
+If `.cursor/handoff.md` exists, copy it to `.cursor/handoff-history/` with a timestamped filename before overwriting:
+
+```
+.cursor/handoff-history/handoff-YYYYMMDD-HHmmss.md
+```
+
+Create the directory if it doesn't exist. This builds a chronological log of all past session handoffs.
+
+### 2. Write the new handoff
+
+Write/overwrite `.cursor/handoff.md` with:
 
 ```markdown
 ---
@@ -45,4 +59,5 @@ Keep it concise — aim for under 40 lines total. This is a breadcrumb trail, no
 ## Important
 
 - Do NOT read or write the handoff file mid-session for no reason. Only read it at the start, only write it at the end.
-- The handoff file is gitignored (it's ephemeral working state, not project history).
+- The handoff file and history directory are gitignored (ephemeral working state, not project history).
+- The history archive is a fallback trail. Don't read old handoffs at session start unless the user asks — the current `handoff.md` is always the one that matters.

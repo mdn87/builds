@@ -59,6 +59,7 @@ Desktop.ini
 # Cursor / IDE
 .cursor/plans/
 .cursor/handoff.md
+.cursor/handoff-history/
 
 # Local history
 .history/
