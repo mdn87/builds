@@ -1,0 +1,48 @@
+---
+description: Session handoff system - check for prior context on start, write wrapup on end
+alwaysApply: true
+---
+
+# Session Continuity
+
+## On Session Start
+
+At the beginning of every new chat, **before doing any work**, read `.cursor/handoff.md` if it exists. This file contains a wrapup from the previous session.
+
+- Check the `last_updated` timestamp at the top. If it is less than 7 days old, treat it as **fresh** — greet the user with a one-line summary of where things left off and what was queued up next, then proceed accordingly.
+- If it is older than 7 days, treat it as **stale** — mention that there's an older handoff note and briefly summarize it, but ask the user what they'd like to focus on rather than assuming continuity.
+- If the file does not exist, proceed normally.
+
+## On Session End
+
+When the user signals they are wrapping up (e.g. "that's it", "let's stop here", "wrap up", "done for now"), or when a major milestone is completed, write/overwrite `.cursor/handoff.md` with:
+
+```markdown
+---
+last_updated: <ISO 8601 datetime>
+session_summary: <one-line summary>
+---
+
+# Session Handoff
+
+## What Was Done
+- <bullet list of completed work>
+
+## Current State
+- <what builds, what doesn't, any known broken things>
+- <current branch and last commit if relevant>
+
+## Next Up
+- <immediate next steps the user agreed to or that follow logically>
+- <any open questions or decisions deferred>
+
+## Gotchas
+- <anything the next session's agent should watch out for>
+```
+
+Keep it concise — aim for under 40 lines total. This is a breadcrumb trail, not a novel.
+
+## Important
+
+- Do NOT read or write the handoff file mid-session for no reason. Only read it at the start, only write it at the end.
+- The handoff file is gitignored (it's ephemeral working state, not project history).
