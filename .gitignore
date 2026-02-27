@@ -1,0 +1,63 @@
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstats
+
+# Visual Studio
+.vs/
+*.rsuser
+launchSettings.json
+
+# NuGet
+**/packages/*
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Build results
+[Dd]ebugPublic/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.TestAdapter.GlobalSettings.xml
+
+# Misc
+*.pidb
+*.svclog
+*.scc
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+_TeamCity*
+*.dotCover
+*.VisualState.xml
+TestResult.xml
+[Ee]xpress/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Cursor / IDE
+.cursor/plans/
+
+# Local history
+.history/

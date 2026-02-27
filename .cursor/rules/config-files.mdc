@@ -1,0 +1,47 @@
+---
+description: Configuration file conventions for beaconctl
+globs: "**/config/**,**/*.json"
+alwaysApply: false
+---
+
+# Configuration Files
+
+## channels.json
+
+Primary config file at `config/channels.json`. Deserialized with `System.Text.Json`.
+
+### Schema
+
+```json
+{
+  "comPort": "COM5",
+  "baudRate": 9600,
+  "protocol": "lcus_a",
+  "exclusive": true,
+  "channels": {
+    "red": 1,
+    "yellow": 2,
+    "green": 3,
+    "buzzer": 4
+  },
+  "statusEngine": {
+    "pollIntervalMinutes": 3,
+    "warningThresholdMinutes": 60,
+    "criticalThresholdMinutes": 120,
+    "hysteresisPolls": 2,
+    "buzzerPulseMs": 750
+  }
+}
+```
+
+### Field Notes
+
+- `comPort`: Windows COM port name. Overridden by `--port` CLI flag.
+- `protocol`: `"lcus_a"` or `"lcus_b"`. Overridden by `--protocol` CLI flag.
+- `exclusive`: When true, only one color channel (1-3) can be on at a time. Buzzer (ch 4) is independent.
+- `channels`: Maps logical names to physical relay channel numbers (1-4). Code should never hardcode channel meanings.
+- `statusEngine`: Only used by the status engine process (Phase 2-3). `hysteresisPolls` = number of consecutive polls a condition must hold before state transitions.
+
+### C# Model
+
+Create a strongly-typed `BeaconConfig` class in BeaconCtl.Core. Use `JsonPropertyName` attributes matching the camelCase keys above.

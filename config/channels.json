@@ -1,0 +1,19 @@
+{
+  "comPort": "COM5",
+  "baudRate": 9600,
+  "protocol": "lcus_a",
+  "exclusive": true,
+  "channels": {
+    "red": 1,
+    "yellow": 2,
+    "green": 3,
+    "buzzer": 4
+  },
+  "statusEngine": {
+    "pollIntervalMinutes": 3,
+    "warningThresholdMinutes": 60,
+    "criticalThresholdMinutes": 120,
+    "hysteresisPolls": 2,
+    "buzzerPulseMs": 750
+  }
+}

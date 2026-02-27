@@ -1,0 +1,45 @@
+---
+description: C# coding conventions for the beaconctl project
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# C# Conventions
+
+## Framework & Language
+
+- Target `net8.0` (LTS). Nullable reference types enabled. Implicit usings enabled.
+- Use file-scoped namespaces.
+- Prefer `async Task` / `async Task<T>` for all I/O operations (serial, file, network).
+
+## CLI
+
+- Use `System.CommandLine` for argument parsing in BeaconCtl.Cli.
+- Root command: `beaconctl`. Subcommands are not used — options go directly on the root command.
+
+## Logging
+
+- Use `Microsoft.Extensions.Logging.ILogger<T>` throughout.
+- Log timestamps, COM port, bytes sent/received, and errors.
+- Console logging for CLI; file logging when `--log-file` is specified.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General / unknown error |
+| 2 | COM port error (missing, access denied, timeout) |
+| 3 | Protocol mismatch / relay did not respond |
+
+## Serial
+
+- Use `System.IO.Ports.SerialPort` — no third-party serial libraries.
+- Always dispose serial ports in `finally` or via `using`.
+- Default: 9600 baud, 8 data bits, no parity, 1 stop bit.
+
+## Project References
+
+- BeaconCtl.Cli depends on BeaconCtl.Core.
+- BeaconCtl.StatusEngine depends on BeaconCtl.Core.
+- BeaconCtl.Core has no project references (leaf dependency).

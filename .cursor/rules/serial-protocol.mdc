@@ -1,0 +1,46 @@
+---
+description: LCUS-4 relay protocol details and interface design
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# LCUS-4 Serial Protocol
+
+## Protocol Interface
+
+All protocol variants must implement `IRelayProtocol`:
+
+```csharp
+public interface IRelayProtocol
+{
+    byte[] BuildRelayOnCommand(int channel);   // channel 1-4
+    byte[] BuildRelayOffCommand(int channel);
+    byte[] BuildAllOffCommand();
+    bool ValidateResponse(byte[] response);
+}
+```
+
+Select implementation at runtime via `--protocol` flag or `config/channels.json`.
+
+## Protocol A (default: `lcus_a`)
+
+- **Relay ON**:  send bytes `{ 0xA0, channel, 0x01, 0xA2 }` where channel = 0x01–0x04
+- **Relay OFF**: send bytes `{ 0xA0, channel, 0x00, 0xA1 }` where channel = 0x01–0x04
+
+## Protocol B (alternate: `lcus_b`)
+
+Some LCUS-4 clones use a different byte pattern. Exact bytes TBD — will be filled in once the board is tested. Skeleton implementation should exist from day one.
+
+## Serial Settings
+
+- Baud: 9600, Data bits: 8, Parity: None, Stop bits: 1
+- Read timeout: 1000ms. Write timeout: 1000ms.
+- Small delay (50-100ms) between consecutive commands to avoid board overrun.
+
+## Safety: Exclusive Mode
+
+When `exclusive` is true in config (default), turning on one color channel must first turn off all other color channels (1-3). The buzzer channel (4) is independent and not affected by exclusive mode.
+
+## Pulse Behavior
+
+A pulse command turns the relay on, waits the specified duration, then turns it off. Use `Task.Delay` for the wait — do not spin.

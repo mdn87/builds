@@ -1,0 +1,32 @@
+---
+description: beaconctl project overview - architecture, phases, and hardware context
+alwaysApply: true
+---
+
+# beaconctl — LCUS-4 USB Relay Beacon Controller
+
+## Hardware
+
+- **Relay board**: LCUS-4 (CH340 USB-serial), 4 channels, controlled over a COM port at 9600 baud 8N1
+- **Load**: 12V beacon tower (red / yellow / green lights + buzzer)
+- **Host**: Windows PC with Office 365 desktop (Outlook running)
+
+## Architecture
+
+Three layers, enforced by separate C# projects:
+
+1. **BeaconCtl.Core** — relay driver and protocol logic. Owns `IRelayProtocol`, serial port abstraction, channel mapping model.
+2. **BeaconCtl.Cli** — console entry point. Parses CLI args via `System.CommandLine`, calls Core. Output assembly name: `beaconctl.exe`.
+3. **BeaconCtl.StatusEngine** — polls an email inbox, computes desired beacon state, calls Core to actuate relays. Runs as a long-lived process or Windows service.
+
+## Phases
+
+- **Phase 1**: CLI relay control (`--port`, `--ch`, `--on/--off`, `--alloff`, `--pulse`, `--protocol`). Prove the serial pipe works.
+- **Phase 2**: Status engine layer — separated from relay code. Decides desired state, calls relay driver.
+- **Phase 3**: Email inbox integration (Outlook COM preferred, Graph API fallback). Poll every 2-5 min, apply warning/critical thresholds with hysteresis.
+
+## Key Files
+
+- `plan.md` — full project plan with rationale and constraints
+- `config/channels.json` — channel mapping + thresholds + COM port settings
+- `beaconctl.sln` — solution root
