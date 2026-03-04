@@ -1,8 +1,29 @@
 Phase 0 - assumptions and constraints
 
-Hardware: Windows PC + LCUS-4 (CH340 USB-serial relay board) + 12 V beacon. PC talks to the relay board over a COM port. The relay board switches 12 V to the beacon wires. No Blue Pill in the first implementation.
+## Hardware and wiring (3-color beacon + buzzer)
 
-Goal: First get deterministic command control working (CLI switches). Then add “email inbox stale unread” status logic that drives the same relay commands.
+**Device:** Windows PC + LCUS-4 (CH340 USB-serial relay board) + 12 V beacon lamp. PC talks to the relay board over a COM port. USB powers the board logic only; an external DC supply powers the beacon and buzzer.
+
+**Beacon lamp:** One unit with four controllable loads — red light, yellow light, green light, buzzer — and one common negative (black). Five wires from the beacon: red, yellow, green, grey (buzzer), black (common).
+
+**Wiring model:**
+
+- PSU positive → COM terminals of the relay board (COM1–COM4 commoned, or jumpered to one PSU+ connection).
+- Relay NO terminals → positive side of each load: NO1 → red light, NO2 → yellow light, NO3 → green light, NO4 → buzzer.
+- Beacon black (common) → PSU negative.
+
+**Relay logic:** Relay closes COM to NO when activated. Relay ON = load receives positive (circuit complete). Relay OFF = load open circuit.
+
+**Channel mapping (configurable in config; never hardcode in app):**
+
+| Channel | Default logical name | Beacon connection |
+|---------|----------------------|--------------------|
+| 1       | red                  | Red light          |
+| 2       | yellow               | Yellow light       |
+| 3       | green                | Green light        |
+| 4       | buzzer               | Buzzer             |
+
+**Goal:** First get deterministic command control working (CLI switches). Then add “email inbox stale unread” status logic that drives the same relay commands.
 
 Phase 1 - CLI relay control (prove the pipe)
 
