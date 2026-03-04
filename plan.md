@@ -4,15 +4,15 @@ Phase 0 - assumptions and constraints
 
 **Device:** Windows PC + LCUS-4 (CH340 USB-serial relay board) + 12 V beacon lamp. PC talks to the relay board over a COM port. USB powers the board logic only; an external DC supply powers the beacon and buzzer.
 
-**Beacon lamp:** One unit with four controllable loads — red light, yellow light, green light, buzzer — and one common negative (black). Five wires from the beacon: red, yellow, green, grey (buzzer), black (common).
+**Beacon lamp:** One unit with four controllable loads — red light, yellow light, green light, buzzer — and one common positive (black). Five wires from the beacon: red, yellow, green, grey (buzzer), black (common). **Common anode wiring: black wire is +12 V; each colour wire goes low to illuminate.**
 
-**Wiring model:**
+**Wiring model (common anode — relays switch the GND side):**
 
-- PSU positive → COM terminals of the relay board (COM1–COM4 commoned, or jumpered to one PSU+ connection).
-- Relay NO terminals → positive side of each load: NO1 → red light, NO2 → yellow light, NO3 → green light, NO4 → buzzer.
-- Beacon black (common) → PSU negative.
+- PSU positive → beacon black (common +).
+- Relay NO terminals → colour wires (negative side of each load): NO1 → red, NO2 → yellow, NO3 → green, NO4 → buzzer.
+- Relay COM terminals → PSU negative (GND).
 
-**Relay logic:** Relay closes COM to NO when activated. Relay ON = load receives positive (circuit complete). Relay OFF = load open circuit.
+**Relay logic:** Relay closes COM to NO when activated. Relay ON = colour wire pulled to GND (load illuminates). Relay OFF = colour wire floating (load off).
 
 **Channel mapping (configurable in config; never hardcode in app):**
 

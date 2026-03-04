@@ -7,16 +7,21 @@ LCUS-4 CH340 USB serial relay board.
 
 ## Wiring assumptions
 
+The beacon is **common anode** (common positive): the black wire is +12 V and
+each colour wire goes low (to GND) to illuminate. The relays switch the
+**negative/ground side** of each load.
+
 ```
-PSU (+12 V) ──┬── COM1 ── NO1 ── Red light ──┐
-              ├── COM2 ── NO2 ── Yellow light ─┤
-              ├── COM3 ── NO3 ── Green light ──┤  → Beacon black (common)
-              └── COM4 ── NO4 ── Buzzer ───────┘     ↓
-                                                PSU (−12 V / GND)
+PSU (+12 V) ──────────────────────────── Beacon black (common +)
+
+Beacon red    ── NO1 ── COM1 ──┐
+Beacon yellow ── NO2 ── COM2 ──┤
+Beacon green  ── NO3 ── COM3 ──┴── PSU (−12 V / GND)
+Beacon buzzer ── NO4 ── COM4 ──┘
 ```
 
-- Relay ON  = load gets +12 V (circuit complete).
-- Relay OFF = load open circuit (no power).
+- Relay ON  = colour wire pulled to GND → load illuminates.
+- Relay OFF = colour wire floating → load off.
 
 | Channel | Default name | Beacon wire |
 |---------|-------------|-------------|

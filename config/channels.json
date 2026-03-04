@@ -1,5 +1,5 @@
 {
-  "comPort": "COM5",
+  "comPort": "COM6",
   "baudRate": 9600,
   "protocol": "lcus_a",
   "exclusive": true,
@@ -8,6 +8,19 @@
     "yellow": 2,
     "green": 3,
     "buzzer": 4
+  },
+  "patterns": {
+    "warn":     [[200, 300]],
+    "alert":    [[150, 150], [150, 150], [150, 300]],
+    "critical": [[100, 100], [100, 100], [100, 100], [100, 100], [100, 300]]
+  },
+  "states": {
+    "off":       { "lights": [],                         "buzzer": null  },
+    "ok":        { "lights": ["green"],                  "buzzer": null  },
+    "warn":      { "lights": ["yellow"],                 "buzzer": "warn"   },
+    "critical":  { "lights": ["red"],                    "buzzer": "alert"  },
+    "escalated": { "lights": ["red", "yellow"],          "buzzer": null  },
+    "fault":     { "lights": ["red", "yellow", "green"], "buzzer": "alert"  }
   },
   "statusEngine": {
     "pollIntervalMinutes": 3,

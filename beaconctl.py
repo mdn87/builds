@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-beaconctl.py — LCUS-4 relay control for 3-colour beacon lamp + buzzer
-Phase 1: minimum viable CLI relay control
+beaconctl.py -- LCUS-4 relay control for 3-colour beacon lamp + buzzer
+Phase 1: CLI relay control
 
 Usage examples:
-  python beaconctl.py --port COM5 --ch 1 --on
-  python beaconctl.py --port COM5 --ch 1 --off
-  python beaconctl.py --port COM5 --alloff
-  python beaconctl.py --port COM5 --ch 4 --pulse 750
-  python beaconctl.py --port COM5 --ch 2 --on --exclusive
-  python beaconctl.py --dry-run --ch 3 --on
+  python beaconctl.py --ch 1 --on
+  python beaconctl.py --ch 1 --off
+  python beaconctl.py --alloff
+  python beaconctl.py --ch 4 --pulse 750
+  python beaconctl.py --ch 4 --pattern alert
+  python beaconctl.py --state warn
+  python beaconctl.py --state critical --no-buzzer
+  python beaconctl.py --dry-run --state escalated
 
 Exit codes:
   0  success
@@ -65,22 +67,37 @@ def build_command(channel: int, on: bool, protocol: str) -> bytes:
 # Config
 # ---------------------------------------------------------------------------
 
+DEFAULT_PATTERNS = {
+    "warn":     [[200, 300]],
+    "alert":    [[150, 150], [150, 150], [150, 300]],
+    "critical": [[100, 100], [100, 100], [100, 100], [100, 100], [100, 300]],
+}
+
+DEFAULT_STATES = {
+    "off":       {"lights": [],                         "buzzer": None},
+    "ok":        {"lights": ["green"],                  "buzzer": None},
+    "warn":      {"lights": ["yellow"],                 "buzzer": "warn"},
+    "critical":  {"lights": ["red"],                    "buzzer": "alert"},
+    "escalated": {"lights": ["red", "yellow"],          "buzzer": None},
+    "fault":     {"lights": ["red", "yellow", "green"], "buzzer": "alert"},
+}
+
 DEFAULT_CONFIG = {
-    "comPort":   "COM5",
+    "comPort":   "COM6",
     "baudRate":  9600,
     "protocol":  "lcus_a",
     "exclusive": True,
     "channels":  {"red": 1, "yellow": 2, "green": 3, "buzzer": 4},
+    "patterns":  DEFAULT_PATTERNS,
+    "states":    DEFAULT_STATES,
 }
 
 
 def find_config() -> str | None:
     """Walk up from script location looking for config/channels.json."""
-    # CWD first
     cwd_path = os.path.join(os.getcwd(), "config", "channels.json")
     if os.path.exists(cwd_path):
         return cwd_path
-    # Walk up from script location
     base = os.path.dirname(os.path.abspath(__file__))
     for _ in range(5):
         candidate = os.path.join(base, "config", "channels.json")
@@ -99,6 +116,7 @@ def load_config(path: str | None) -> dict:
     if resolved and os.path.exists(resolved):
         with open(resolved, encoding="utf-8") as f:
             data = json.load(f)
+        # merge top-level keys; patterns/states replace entirely if present
         cfg.update(data)
     return cfg
 
@@ -137,22 +155,40 @@ class RelayDriver:
         if self.dry_run:
             print(f"[DRY-RUN] CH{channel} -> {state_str}  bytes={cmd.hex(' ').upper()}")
             return
-        self.log.debug("CH%d %s → %s", channel, state_str, cmd.hex(" ").upper())
+        self.log.debug("CH%d %s  bytes=%s", channel, state_str, cmd.hex(" ").upper())
         self._serial.write(cmd)
 
     def all_off(self, max_channel: int):
         for ch in range(1, max_channel + 1):
             self.set_channel(ch, False)
             if not self.dry_run:
-                time.sleep(0.02)  # brief inter-command gap
+                time.sleep(0.02)
 
     def pulse(self, channel: int, ms: int):
         self.set_channel(channel, True)
         if self.dry_run:
-            print(f"[DRY-RUN] (waiting {ms} ms)")
+            print(f"[DRY-RUN] (hold {ms} ms)")
         else:
             time.sleep(ms / 1000.0)
         self.set_channel(channel, False)
+
+    def pattern(self, channel: int, pulses: list):
+        """Play a burst sequence: each pulse is [on_ms, off_ms]."""
+        for i, pulse in enumerate(pulses):
+            on_ms  = pulse[0]
+            off_ms = pulse[1] if len(pulse) > 1 else 0
+            self.set_channel(channel, True)
+            if self.dry_run:
+                print(f"[DRY-RUN] (hold {on_ms} ms)")
+            else:
+                time.sleep(on_ms / 1000.0)
+            self.set_channel(channel, False)
+            # gap after all but the very last pulse
+            if off_ms > 0:
+                if self.dry_run:
+                    print(f"[DRY-RUN] (gap {off_ms} ms)")
+                else:
+                    time.sleep(off_ms / 1000.0)
 
     def __enter__(self):
         self.open()
@@ -172,26 +208,43 @@ def build_parser() -> argparse.ArgumentParser:
         description="LCUS-4 relay control for 3-colour beacon lamp + buzzer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+named states (--state):
+  off        all lights off
+  ok         green
+  warn       yellow + warn buzzer pattern on entry
+  critical   red + alert buzzer pattern on entry
+  escalated  red + yellow (no buzzer; already fired)
+  fault      all three lights + alert buzzer
+
+buzzer patterns (--pattern):
+  warn       1 beep  (200 ms)
+  alert      3 beeps (150 ms each)
+  critical   5 rapid beeps (100 ms each)
+
 examples:
-  beaconctl --port COM5 --ch 1 --on
-  beaconctl --port COM5 --ch 2 --off
-  beaconctl --port COM5 --alloff
-  beaconctl --port COM5 --ch 4 --pulse 750
-  beaconctl --dry-run --ch 3 --on --exclusive
+  beaconctl --ch 1 --on
+  beaconctl --ch 4 --pattern alert
+  beaconctl --state warn
+  beaconctl --state escalated --no-buzzer
+  beaconctl --alloff
+  beaconctl --dry-run --state critical
 """
     )
     p.add_argument("--port",         metavar="COMx",  help="COM port (overrides config)")
-    p.add_argument("--ch",           type=int,         metavar="N",    help="Relay channel 1-4")
-    p.add_argument("--on",           action="store_true",               help="Turn channel on")
-    p.add_argument("--off",          action="store_true",               help="Turn channel off")
-    p.add_argument("--alloff",       action="store_true",               help="Turn all channels off")
-    p.add_argument("--pulse",        type=int,         metavar="MS",   help="Pulse channel ON for N ms then off")
-    p.add_argument("--protocol",     choices=["lcus_a", "lcus_b"],      help="Protocol variant (default: lcus_a)")
-    p.add_argument("--exclusive",    action="store_true",               help="Turn off other channels before turning one on")
-    p.add_argument("--nonexclusive", action="store_true",               help="Allow multiple channels on simultaneously")
-    p.add_argument("--dry-run",      action="store_true",               help="Print commands without sending")
-    p.add_argument("--log-file",     metavar="PATH",                    help="Append log lines to file")
-    p.add_argument("--config",       metavar="PATH",                    help="Path to channels.json")
+    p.add_argument("--ch",           type=int, metavar="N", help="Relay channel 1-4")
+    p.add_argument("--on",           action="store_true",   help="Turn channel on")
+    p.add_argument("--off",          action="store_true",   help="Turn channel off")
+    p.add_argument("--alloff",       action="store_true",   help="Turn all channels off")
+    p.add_argument("--pulse",        type=int, metavar="MS",help="Pulse channel ON for N ms then off")
+    p.add_argument("--pattern",      metavar="NAME",        help="Play named buzzer burst (warn/alert/critical)")
+    p.add_argument("--state",        metavar="NAME",        help="Set named beacon state (ok/warn/critical/escalated/fault/off)")
+    p.add_argument("--no-buzzer",    action="store_true",   help="Suppress buzzer when setting --state")
+    p.add_argument("--protocol",     choices=["lcus_a", "lcus_b"], help="Protocol variant (default: lcus_a)")
+    p.add_argument("--exclusive",    action="store_true",   help="Turn off other channels before turning one on")
+    p.add_argument("--nonexclusive", action="store_true",   help="Allow multiple channels on simultaneously")
+    p.add_argument("--dry-run",      action="store_true",   help="Print commands without sending")
+    p.add_argument("--log-file",     metavar="PATH",        help="Append log lines to file")
+    p.add_argument("--config",       metavar="PATH",        help="Path to channels.json")
     return p
 
 
@@ -200,7 +253,10 @@ def main() -> int:
     args   = parser.parse_args()
 
     # ── Load config ──────────────────────────────────────────────────────────
-    cfg = load_config(args.config)
+    cfg      = load_config(args.config)
+    channels = cfg.get("channels", DEFAULT_CONFIG["channels"])
+    patterns = cfg.get("patterns", DEFAULT_PATTERNS)
+    states   = cfg.get("states",   DEFAULT_STATES)
 
     # ── Logging ──────────────────────────────────────────────────────────────
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
@@ -215,14 +271,13 @@ def main() -> int:
     log = logging.getLogger("beaconctl")
 
     # ── Resolve settings ─────────────────────────────────────────────────────
-    com_port    = args.port or cfg.get("comPort", "COM5")
+    com_port    = args.port or cfg.get("comPort", "COM6")
     baud_rate   = cfg.get("baudRate", 9600)
     protocol    = args.protocol or cfg.get("protocol", "lcus_a")
-    channels    = cfg.get("channels", DEFAULT_CONFIG["channels"])
     max_channel = max(channels.values()) if channels else 4
+    buzzer_ch   = channels.get("buzzer", 4)
     dry_run     = args.dry_run
 
-    # exclusive: CLI --nonexclusive overrides all; else --exclusive flag; else config
     if args.nonexclusive:
         exclusive = False
     elif args.exclusive:
@@ -230,60 +285,110 @@ def main() -> int:
     else:
         exclusive = bool(cfg.get("exclusive", True))
 
-    # ── Validate ─────────────────────────────────────────────────────────────
-    if not args.alloff and args.ch is None:
-        parser.error("specify --ch N or --alloff")
+    # ── Determine mode and validate ──────────────────────────────────────────
+    if args.state:
+        mode = "state"
+        if args.state not in states:
+            parser.error(f"unknown state '{args.state}'. Known: {', '.join(states)}")
 
-    if not args.alloff and args.pulse is None and not args.on and not args.off:
-        parser.error("specify --on, --off, or --pulse <ms>")
+    elif args.pattern:
+        mode = "pattern"
+        if args.pattern not in patterns:
+            parser.error(f"unknown pattern '{args.pattern}'. Known: {', '.join(patterns)}")
 
-    if args.on and args.off:
-        parser.error("--on and --off are mutually exclusive")
+    elif args.alloff:
+        mode = "alloff"
 
-    if args.ch is not None and not (1 <= args.ch <= 4):
-        parser.error("--ch must be 1, 2, 3, or 4")
+    elif args.ch is not None:
+        if not (1 <= args.ch <= 4):
+            parser.error("--ch must be 1, 2, 3, or 4")
+        if args.on and args.off:
+            parser.error("--on and --off are mutually exclusive")
+        if args.pulse is not None:
+            mode = "pulse"
+        elif args.on:
+            mode = "on"
+        elif args.off:
+            mode = "off"
+        else:
+            parser.error("with --ch, specify --on, --off, or --pulse <ms>")
+
+    else:
+        parser.error("specify --ch N, --alloff, --state NAME, or --pattern NAME")
 
     # ── Execute ──────────────────────────────────────────────────────────────
     try:
         with RelayDriver(com_port, baud_rate, protocol, dry_run, log) as driver:
-            if args.alloff:
+
+            if mode == "state":
+                state_def   = states[args.state]
+                light_names = state_def.get("lights", [])
+                buzzer_pat  = None if args.no_buzzer else state_def.get("buzzer")
+
+                # resolve light names to channel numbers
+                light_chs = []
+                for name in light_names:
+                    ch = channels.get(name)
+                    if ch is None:
+                        log.warning("state '%s' references unknown channel '%s', skipping", args.state, name)
+                    else:
+                        light_chs.append(ch)
+
+                log.info("state=%s  lights=%s  buzzer=%s", args.state, light_names or "none",
+                         buzzer_pat or "none")
+
+                # always start clean
+                driver.all_off(max_channel)
+                for ch in light_chs:
+                    driver.set_channel(ch, True)
+                    if not dry_run:
+                        time.sleep(0.02)
+
+                if buzzer_pat and buzzer_pat in patterns:
+                    driver.pattern(buzzer_ch, patterns[buzzer_pat])
+
+            elif mode == "pattern":
+                log.info("pattern=%s  ch=%d", args.pattern, buzzer_ch)
+                driver.pattern(buzzer_ch, patterns[args.pattern])
+
+            elif mode == "alloff":
                 log.info("alloff: turning channels 1-%d off", max_channel)
                 driver.all_off(max_channel)
 
-            elif args.pulse is not None:
+            elif mode == "pulse":
                 log.info("CH%d pulse %d ms (exclusive=%s)", args.ch, args.pulse, exclusive)
                 if exclusive:
                     driver.all_off(max_channel)
                 driver.pulse(args.ch, args.pulse)
 
-            elif args.on:
+            elif mode == "on":
                 log.info("CH%d ON (exclusive=%s)", args.ch, exclusive)
                 if exclusive:
                     driver.all_off(max_channel)
                 driver.set_channel(args.ch, True)
 
-            else:  # off
+            elif mode == "off":
                 log.info("CH%d OFF", args.ch)
                 driver.set_channel(args.ch, False)
 
         return 0
 
     except PermissionError as exc:
-        print(f"error: COM port access denied — {exc}", file=sys.stderr)
+        print(f"error: COM port access denied -- {exc}", file=sys.stderr)
         log.error("COM port access denied: %s", exc)
         return 2
 
     except serial.SerialException as exc:
         msg = str(exc).lower()
         if "access" in msg or "denied" in msg:
-            print(f"error: COM port access denied — {exc}", file=sys.stderr)
+            print(f"error: COM port access denied -- {exc}", file=sys.stderr)
             return 2
-        print(f"error: COM port not found or in use — {exc}", file=sys.stderr)
+        print(f"error: COM port not found or in use -- {exc}", file=sys.stderr)
         log.error("Serial error: %s", exc)
         return 3
 
     except serial.SerialTimeoutException as exc:
-        print(f"error: serial write timeout — {exc}", file=sys.stderr)
+        print(f"error: serial write timeout -- {exc}", file=sys.stderr)
         log.error("Serial timeout: %s", exc)
         return 4
 
