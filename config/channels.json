@@ -12,7 +12,10 @@
   "patterns": {
     "warn":     [[200, 300]],
     "alert":    [[150, 150], [150, 150], [150, 300]],
-    "critical": [[100, 100], [100, 100], [100, 100], [100, 100], [100, 300]]
+    "critical": [[100, 100], [100, 100], [100, 100], [100, 100], [100, 300]],
+    "chirp":    [[22, 0]],
+    "tick":     [[22, 300], [22, 300], [22, 300]],
+    "buzz":     [[22, 150], [22, 150], [22, 150], [22, 150], [22, 150]]
   },
   "states": {
     "off":       { "lights": [],                         "buzzer": null  },
@@ -27,6 +30,12 @@
     "warningThresholdMinutes": 60,
     "criticalThresholdMinutes": 120,
     "hysteresisPolls": 2,
+    "escalationPolls": 3,
     "buzzerPulseMs": 750
+  },
+  "outlook": {
+    "folderSource": "default_inbox",
+    "storeDisplayName": null,
+    "folderPath": null
   }
 }

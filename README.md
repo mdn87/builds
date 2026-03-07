@@ -37,8 +37,11 @@ Channel mapping lives in `config/channels.json` — never hardcoded.
 ## Requirements
 
 - Python 3.11+ (`python --version`)
-- pyserial (`pip install pyserial`)
+- pyserial (`pip install pyserial`) — for beaconctl.py relay control
+- pywin32 (`pip install pywin32`) — for status engine Outlook inbox polling (Windows only)
 - LCUS-4 board connected via USB (CH340 driver installed)
+
+Or install from repo root: `pip install -r requirements.txt`
 
 ---
 
@@ -116,14 +119,34 @@ If the relay board doesn't respond, try `--protocol lcus_b`.
 
 ---
 
-## C# build (future)
+## Status engine (Phase 2 & 3)
 
-The `src/` directory contains a .NET 8 C# implementation (BeaconCtl.Cli, BeaconCtl.Core).
-Requires the .NET 8 SDK: https://dot.net/download
+A separate process that periodically decides a beacon state and calls `beaconctl.py`.
+
+**With Outlook (Phase 3):** If `config/channels.json` has an `outlook` section and pywin32 is installed, the engine polls the configured folder (default Inbox or shared mailbox), computes state from oldest unread age (warn > 60 min, critical > 120 min), applies hysteresis and escalation, then sets the beacon.
+
+```bat
+python status_engine.py
+python status_engine.py --config path/to/channels.json
+python status_engine.py --no-outlook        # stub only (no Outlook)
+python status_engine.py --state warn --once   # override state for testing
+```
+PowerShell env override: `$env:BEACON_STATE='warn'; python status_engine.py --once`
+
+**Config:** `statusEngine.pollIntervalMinutes`, `warningThresholdMinutes`, `criticalThresholdMinutes`, `hysteresisPolls`, `escalationPolls`; `outlook.folderSource` (`default_inbox` or shared store), `outlook.storeDisplayName`, `outlook.folderPath`. See `docs/outlook-integration.md` for folder targeting and target-machine checklist.
+
+**Scheduled task (Windows):** Run the status engine every N minutes with “Run only when user is logged on” so Outlook is running. Example: Task Scheduler → Create Task → Trigger every 3 min → Action `python C:\path\to\status_engine.py` (or a .bat that does the same).
+
+---
+
+## C# build
+
+The `src/` directory contains a .NET 10 C# implementation (BeaconCtl.Cli, BeaconCtl.Core).
+Requires the .NET 10 SDK: https://dot.net/download
 
 ```bat
 dotnet build beaconctl.sln
 dotnet run --project src/BeaconCtl.Cli -- --port COM5 --ch 1 --on
 ```
 
-The Python script and C# project are functionally equivalent for Phase 1.
+The C# CLI supports **low-level relay control only**: `--ch`, `--on`/`--off`, `--alloff`, `--pulse`, `--port`, `--protocol`, `--dry-run`, etc. It does **not** yet support `--state` or `--pattern`; use `beaconctl.py` for named states and buzzer patterns (and for the status engine).

@@ -1,36 +1,23 @@
 ---
-last_updated: 2026-02-27T04:10:00-05:00
-session_summary: Project fully scaffolded with git, C# solution, config, agent rules, and session continuity system. Ready to start Phase 1 coding.
+last_updated: 2026-03-06T23:00:00-05:00
+session_summary: Phase 3 Outlook inbox done; Blue Pill rework doc locked in (ASCII protocol, USB CDC, patterns in firmware).
 ---
 
 # Session Handoff
 
 ## What Was Done
-- Reviewed plan.md — confirmed sound, no changes
-- Chose C# as language (user preference, strong fit for Windows + serial + Outlook COM)
-- Initialized git repo with .NET .gitignore
-- Created `beaconctl.sln` with three projects: BeaconCtl.Cli, BeaconCtl.Core, BeaconCtl.StatusEngine (net8.0)
-- Created `config/channels.json` with channel mapping + status engine defaults
-- Created 5 Cursor agent rules: project-overview, csharp-conventions, serial-protocol, config-files, session-continuity
-- Built session continuity system: handoff.md read on start, written on end, archived to .cursor/handoff-history/ with timestamps
+- Phase 3: Outlook COM inbox polling in `outlook_inbox.py`; `status_engine.py` computes state from oldest unread (hysteresis + escalation), shells out to beaconctl. Config: `outlook` section, `statusEngine.escalationPolls`; `--no-outlook` / `--state` for stub. README + requirements.txt (pywin32).
+- Status engine: `--state NAME` and `--once` for testing without env vars (PowerShell-friendly).
+- Hardware rework: `docs/hardware-rework-bluepill.md` — Blue Pill + 4× MOSFETs, wiring, **ASCII line protocol** (SET R/Y/G/B, PATTERN IDLE/WARNING/CRITICAL/OFF, BEEP, ALL OFF), patterns in firmware, USB CDC, state mapping. One stale table row in that doc (States/patterns) could be cleaned up next session.
 
 ## Current State
-- Solution structure exists but no real code beyond a stub `Program.cs`
-- No .NET SDK on this dev machine — projects hand-authored, need `dotnet restore` on target
-- Git repo clean, 3 commits on `master` (latest: `cb6ba31`)
-- Handoff system operational with history archive
+- Phase 1–3 done: beaconctl.py (LCUS), status_engine.py (Outlook or stub), outlook_inbox.py (pywin32), config has outlook + statusEngine.
+- Plan: `plan.md` points to Blue Pill rework in `docs/hardware-rework-bluepill.md`.
 
 ## Next Up
-Add git push to handoff process and add a best practice way of including handoff for use across workstations.
-- **Phase 1**: Implement CLI relay control in BeaconCtl.Core and BeaconCtl.Cli
-  - `IRelayProtocol` interface + `LcusProtocolA` implementation
-  - `RelayDriver` class wrapping SerialPort
-  - `BeaconConfig` strongly-typed config model
-  - System.CommandLine root command: `--port`, `--ch`, `--on/--off`, `--alloff`, `--pulse`, `--protocol`, `--log-file`
-  - Logical name support (`--red on`, `--set red=on yellow=off`)
-  - Dry-run mode, exclusive mode
-- Phase 2 and 3 come after Phase 1 is stable
+- **Blue Pill path:** Implement firmware (USB CDC, line parser, PWM, pattern state machine); add beaconctl `--backend bluepill` that sends `PATTERN WARNING` etc. Config `backend`, `comPort`.
+- Optional: Fix remaining “States / patterns” row in `docs/hardware-rework-bluepill.md` (curly quotes / wording).
 
 ## Gotchas
-- LCUS-4 protocol bytes may vary between clones — Protocol B bytes TBD until board is physically tested
-- No .NET SDK on this dev machine; build/test on the target system
+- Outlook COM: Outlook must be running; task “Run only when user is logged on.” See `docs/outlook-integration.md`.
+- Blue Pill: One USB cable (CDC); PC sends high-level commands only; timing lives in firmware.

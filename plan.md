@@ -4,7 +4,9 @@ Phase 0 - assumptions and constraints
 
 **Device:** Windows PC + LCUS-4 (CH340 USB-serial relay board) + 12 V beacon lamp. PC talks to the relay board over a COM port. USB powers the board logic only; an external DC supply powers the beacon and buzzer.
 
-**Beacon lamp:** One unit with four controllable loads — red light, yellow light, green light, buzzer — and one common positive (black). Five wires from the beacon: red, yellow, green, grey (buzzer), black (common). **Common anode wiring: black wire is +12 V; each colour wire goes low to illuminate.**
+**Beacon lamp:** One unit with four controllable loads — red light, yellow light, green light, buzzer — and one common positive (black). Five wires: red, yellow, green, grey (buzzer), black (common). **Common anode wiring: black wire is +12 V; each colour wire goes low to illuminate.**
+
+**Actual colours:** deep red, orange/amber, deep green.
 
 **Wiring model (common anode — relays switch the GND side):**
 
@@ -12,9 +14,9 @@ Phase 0 - assumptions and constraints
 - Relay NO terminals → colour wires (negative side of each load): NO1 → red, NO2 → yellow, NO3 → green, NO4 → buzzer.
 - Relay COM terminals → PSU negative (GND).
 
-**Relay logic:** Relay closes COM to NO when activated. Relay ON = colour wire pulled to GND (load illuminates). Relay OFF = colour wire floating (load off).
+**Relay logic:** Relay ON = colour wire pulled to GND (load illuminates). Relay OFF = colour wire floating (load off).
 
-**Channel mapping (configurable in config; never hardcode in app):**
+**Channel mapping (configurable in config/channels.json; never hardcode in app):**
 
 | Channel | Default logical name | Beacon connection |
 |---------|----------------------|--------------------|
@@ -23,163 +25,161 @@ Phase 0 - assumptions and constraints
 | 3       | green                | Green light        |
 | 4       | buzzer               | Buzzer             |
 
-**Goal:** First get deterministic command control working (CLI switches). Then add “email inbox stale unread” status logic that drives the same relay commands.
+**Goal:** First get deterministic command control working (CLI switches). Then add "email inbox stale unread" status logic that drives the same relay commands.
 
-Phase 1 - CLI relay control (prove the pipe)
+**Hardware rework (planned):** Replace LCUS-4 with Blue Pill + 4× low-side MOSFETs for PWM control (fades, on-device patterns, buzzer modulation). Wiring and software impact are in **`docs/hardware-rework-bluepill.md`**. Status engine and states stay the same; beaconctl gains a Blue Pill backend and new serial protocol.
 
-Define a small relay control program (single executable or script) that:
+---
 
-opens a specified COM port at 9600 baud
+Phase 1 - CLI relay control (prove the pipe) — COMPLETE
 
-sends relay on/off commands
+**Implementation:** `beaconctl.py` (Python 3.11 + pyserial). C# project scaffold also written in `src/` and ready to compile with .NET 10 SDK.
 
-exits with proper error codes if COM port is missing, access denied, timeout, or protocol mismatch
+**COM port:** COM6 (set in config/channels.json)
 
-supports a “dry-run” mode that prints what would be sent
+### Command-line interface
 
-Command-line interface (initial)
-Minimum viable switches:
+Low-level channel control:
 
---port COM5
+```
+beaconctl --ch 1|2|3|4 --on
+beaconctl --ch 1|2|3|4 --off
+beaconctl --ch 1|2|3|4 --pulse <ms>
+beaconctl --alloff
+```
 
---ch 1|2|3|4
+Named state control (preferred for status engine):
 
---on or --off
+```
+beaconctl --state ok
+beaconctl --state warn
+beaconctl --state critical
+beaconctl --state escalated
+beaconctl --state fault
+beaconctl --state off
+beaconctl --state warn --no-buzzer    (suppress buzzer, e.g. repeat polls)
+```
 
---alloff
+Buzzer pattern only (lights untouched):
 
---status (optional, if board supports query)
+```
+beaconctl --pattern warn
+beaconctl --pattern alert
+beaconctl --pattern critical
+```
 
---pulse 1000 (milliseconds, optional)
+All flags:
 
-Examples:
+```
+--port COMx          Override COM port
+--protocol lcus_a|lcus_b   Swap if relay doesn't click
+--exclusive          Turn off others before turning one on (default)
+--nonexclusive       Allow multiple channels on simultaneously
+--dry-run            Print bytes without opening port
+--log-file PATH      Append timestamped log to file
+--config PATH        Override path to channels.json
+```
 
-beaconctl --port COM5 --ch 1 --on
+### Named states (config/channels.json "states")
 
-beaconctl --port COM5 --ch 1 --off
+| State     | Lights            | Buzzer on entry | When to use                          |
+|-----------|-------------------|-----------------|--------------------------------------|
+| off       | none              | none            | No mail / system idle                |
+| ok        | green             | none            | Inbox current                        |
+| warn      | yellow            | warn (1 beep)   | Unread > 60 min                      |
+| critical  | red               | alert (3 beeps) | Unread > 120 min                     |
+| escalated | red + yellow      | none            | Red for a long time and still growing|
+| fault     | red+yellow+green  | alert (3 beeps) | Status engine error / unknown state  |
 
-beaconctl --port COM5 --alloff
+### Buzzer patterns (config/channels.json "patterns")
 
-beaconctl --port COM5 --ch 4 --pulse 750
+| Pattern  | Sequence                       | Sound           |
+|----------|--------------------------------|-----------------|
+| warn     | 200ms on, 300ms off            | 1 short beep    |
+| alert    | 3x (150ms on, 150ms off)       | 3 beeps         |
+| critical | 5x (100ms on, 100ms off)       | 5 rapid beeps   |
 
-Logical mapping layer
-Create a stable mapping in config (json/yaml) so code never hardcodes channel meaning:
+Relay mechanics limit minimum reliable pulse to ~100 ms. Patterns are defined
+as `[[on_ms, off_ms], ...]` lists in config — add or modify without touching code.
 
-channels:
+**Buzzer note:** Active buzzer is very loud. Use patterns/duty-cycle rather than
+continuous ON. Physical tape over the port is also effective (-6 to -10 dB).
 
-red: 1
+### Colour combination rationale
 
-yellow: 2
+- Red + yellow (escalated): two lenses lit = unmissable; reads as "beyond red" visually
+- All three (fault): distinct from all normal states, immediately obvious as "something is wrong with the tool"
+- Red + green is avoided (muddy colour, no intuitive meaning)
 
-green: 3
+### Protocol
 
-buzzer: 4
+LCUS-A (default): `A0 CH STATE (A0+CH+STATE)&0xFF`
+LCUS-B (alternate clone): `A0 CH STATE (A0^CH^STATE)&0xFF`
+Try `--protocol lcus_b` if the relay doesn't respond.
 
-Then allow:
+### Deliverable (done)
 
-beaconctl --port COM5 --red on
+- `beaconctl.py` reliably controls each relay and plays buzzer patterns
+- `config/channels.json` holds all channel mapping, states, and patterns
+- `README.md` with wiring diagram and example commands
+- C# project in `src/` compiles with .NET 10 SDK
 
-beaconctl --port COM5 --buzzer pulse=750
+---
 
-beaconctl --port COM5 --set red=on yellow=off green=off buzzer=off
+Phase 2 - thin "status engine" that calls the same command layer
 
-But implement the simple --ch first.
+Keep layers strictly separated:
 
-Safety behavior
-Default behavior when setting a color:
+- **relay driver** — sends relay commands (beaconctl.py / BeaconCtl.Core)
+- **command interface** — parses CLI, calls relay driver
+- **status engine** — decides desired beacon state, shells out to beaconctl
 
-If a color is turned on, optionally turn other colors off (exclusive mode).
-Add switch:
+The status engine calls `beaconctl --state <name>` or `beaconctl --state <name> --no-buzzer`
+depending on whether this is a state transition or a steady-state repeat poll.
 
---exclusive (default on) or --nonexclusive
+---
 
-Logging
+Phase 3 - email inbox status integration
 
---log-file path
+**Target:** O365 mailbox, Outlook desktop installed and running.
 
-log timestamp, COM port, bytes sent, and any errors
-This will matter once it runs unattended.
+**Objective:** Turn beacon on if any unread email is older than threshold.
 
-Known risk: LCUS protocol variants
-Implement protocol as a pluggable strategy:
+### State machine
 
-protocol = lcus_a (default)
+| Condition                              | State     | Transition buzzer |
+|----------------------------------------|-----------|-------------------|
+| No stale unread                        | ok        | none              |
+| Unread > 60 min                        | warn      | warn (on entry)   |
+| Unread > 120 min                       | critical  | alert (on entry)  |
+| Critical for N+ consecutive polls      | escalated | none              |
+| Status engine exception / unknown      | fault     | alert (on entry)  |
 
-protocol = lcus_b (alternate)
-Expose:
+- **Hysteresis:** condition must hold for 2 consecutive polls before state change
+- **Buzzer:** fires only on state *transition*, not on repeat polls
+- **Escalation:** `escalated` triggers after `critical` persists for N polls (configurable)
+- **Poll interval:** 2–5 minutes (configurable)
 
---protocol lcus_a|lcus_b
-If relay does not click, swap protocol without rewriting the app.
+### Implementation approach
 
-Deliverable for Phase 1
+**Option A: Outlook COM via pywin32 (preferred — Outlook is installed)**
+- `win32com.client` dispatches to `Outlook.Application`
+- Query folder items: filter unread, check `ReceivedTime` vs cutoff
+- No credentials needed; uses running Outlook profile
+- Runs as scheduled task every N minutes (user must be logged on so Outlook is running)
+- **Dev vs target:** See `docs/outlook-integration.md` for Windows 10 vs 11, targeting specific folders, shared inboxes, and a target-machine checklist.
 
-beaconctl can reliably turn each relay on/off and pulse buzzer
+**Option B: IMAP polling**
+- App password / OAuth
+- Search UNSEEN, fetch headers/date, compare timestamps
+- Works without Outlook installed
 
-a short README with wiring assumptions and example commands
+**Option C: Microsoft Graph REST API**
+- App registration, OAuth token, Graph query for unread + `receivedDateTime`
+- Most correct for M365 but more setup overhead
 
-Phase 2 - thin “status engine” that calls the same command layer
+### Deliverable for Phase 3
 
-Do not merge email logic into the relay code. Keep layers:
-
-relay driver: “send relay commands”
-
-command interface: parses CLI, calls relay driver
-
-status engine: decides desired beacon state, calls relay driver (or shells out to beaconctl)
-
-Phase 3 - email inbox status integration (vague but actionable)
-
-Objective: Turn beacon on if there exists any unread email older than threshold (example 60 minutes). Optional: different colors for different states.
-
-Status definitions (initial)
-
-OK: no stale unread -> green on (or all off)
-
-Warning: unread older than 60 min exists -> yellow on
-
-Critical: unread older than 120 min exists -> red on + optional buzzer pulse on transition
-
-Implementation approach (pick one later, after commands work)
-Option A: Outlook COM (fastest if Outlook is installed and mailbox is in profile)
-
-Use pywin32 or a .NET app to query Inbox items
-
-Filter unread, check ReceivedTime vs cutoff
-
-Runs as scheduled task every N minutes
-
-Option B: IMAP polling (works for Gmail and some providers)
-
-Log in with app password/OAuth
-
-Search UNSEEN, fetch headers/date
-
-Compare timestamps
-
-Option C: Microsoft Graph (most correct for M365, but more setup)
-
-App registration, OAuth, Graph query for unread messages and receivedDateTime
-
-Potentially subscriptions later, but polling is fine at first
-
-Control loop behavior
-
-Poll interval: 2-5 minutes
-
-Hysteresis: require condition to be true for 2 consecutive polls before switching to avoid flapping
-
-Transition actions: buzzer pulses only when entering Warning/Critical, not continuously
-
-Deliverable for Phase 3
-
-a “monitor” process (script or service) that computes state and calls the relay layer
-
-configuration file for thresholds, poll interval, channel mapping, and COM port
-
-Instructions to your Cursor agent (paste this)
-
-Build a Windows relay control utility for an LCUS-4 USB relay board (CH340, serial). Phase 1 is CLI-only. Provide: beaconctl --port COMx --ch 1-4 --on/--off, plus --alloff and --pulse ms. Implement logging and proper exit codes. Make relay protocol pluggable via --protocol, because LCUS-4 clones vary. Keep channel mapping in a config file.
-
-After CLI control is stable, implement a separate “status engine” that polls an email inbox and decides beacon state. Keep it layered: status engine -> relay driver. Start with polling (2-5 min). State rules: if any unread email is older than 60 minutes, turn yellow on; if older than 120 minutes, red on; otherwise green or off. Pulse buzzer only on transition into warning/critical. Email access method can be selected later (Outlook COM if Outlook is installed, otherwise IMAP or Microsoft Graph).
-
-This will be for O365 running the script in whichever language or platform will be best for monitoring a mailbox on the computer with office desktop installed and running in realtime.
+- `status_engine.py` (or separate process) that computes state and calls `beaconctl --state`
+- All thresholds, poll interval, channel mapping, and COM port in `config/channels.json`
+- Instructions for running as a Windows scheduled task or startup script

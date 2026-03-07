@@ -23,6 +23,7 @@ Exit codes:
 """
 
 import argparse
+import ctypes
 import json
 import logging
 import os
@@ -34,6 +35,48 @@ try:
 except ImportError:
     print("error: pyserial not installed. Run: pip install pyserial", file=sys.stderr)
     sys.exit(99)
+
+# ---------------------------------------------------------------------------
+# Precision timing
+# ---------------------------------------------------------------------------
+# Windows default timer resolution is ~15.6 ms, which makes time.sleep()
+# useless for sub-50 ms pulses.  We set the multimedia timer to 1 ms for the
+# duration of any short-pulse pattern, then restore it afterward.
+
+_winmm = None
+try:
+    _winmm = ctypes.windll.winmm  # type: ignore[attr-defined]
+except AttributeError:
+    pass  # non-Windows — fall back gracefully
+
+
+class _PrecisionTimer:
+    """Context manager: sets Windows timer resolution to 1 ms while active."""
+    def __enter__(self):
+        if _winmm:
+            _winmm.timeBeginPeriod(1)
+        return self
+
+    def __exit__(self, *_):
+        if _winmm:
+            _winmm.timeEndPeriod(1)
+
+
+def precise_sleep(seconds: float) -> None:
+    """Sleep with ~1 ms accuracy on Windows using a perf_counter busy-wait.
+
+    For durations > 50 ms the overhead isn't worth it, so we fall back to
+    regular time.sleep() (which is accurate enough at that scale).
+    """
+    if seconds <= 0:
+        return
+    if seconds > 0.050:
+        time.sleep(seconds)
+        return
+    # Busy-wait for short durations — CPU spins but only for <50 ms at a time.
+    end = time.perf_counter() + seconds
+    while time.perf_counter() < end:
+        pass
 
 # ---------------------------------------------------------------------------
 # Protocol byte builders
@@ -121,6 +164,12 @@ def load_config(path: str | None) -> dict:
     return cfg
 
 
+class _NullContext:
+    """No-op context manager — used when precision timing isn't needed."""
+    def __enter__(self): return self
+    def __exit__(self, *_): pass
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -169,26 +218,33 @@ class RelayDriver:
         if self.dry_run:
             print(f"[DRY-RUN] (hold {ms} ms)")
         else:
-            time.sleep(ms / 1000.0)
+            precise_sleep(ms / 1000.0)
         self.set_channel(channel, False)
 
     def pattern(self, channel: int, pulses: list):
-        """Play a burst sequence: each pulse is [on_ms, off_ms]."""
-        for i, pulse in enumerate(pulses):
-            on_ms  = pulse[0]
-            off_ms = pulse[1] if len(pulse) > 1 else 0
-            self.set_channel(channel, True)
-            if self.dry_run:
-                print(f"[DRY-RUN] (hold {on_ms} ms)")
-            else:
-                time.sleep(on_ms / 1000.0)
-            self.set_channel(channel, False)
-            # gap after all but the very last pulse
-            if off_ms > 0:
+        """Play a burst sequence: each pulse is [on_ms, off_ms].
+
+        Uses the Windows 1 ms timer and busy-wait for pulses under 50 ms so
+        that short durations (e.g. 22 ms) are actually honoured.
+        """
+        min_ms = min(p[0] for p in pulses)
+        needs_precision = min_ms < 50
+
+        with (_PrecisionTimer() if needs_precision else _NullContext()):
+            for pulse in pulses:
+                on_ms  = pulse[0]
+                off_ms = pulse[1] if len(pulse) > 1 else 0
+                self.set_channel(channel, True)
                 if self.dry_run:
-                    print(f"[DRY-RUN] (gap {off_ms} ms)")
+                    print(f"[DRY-RUN] (hold {on_ms} ms)")
                 else:
-                    time.sleep(off_ms / 1000.0)
+                    precise_sleep(on_ms / 1000.0)
+                self.set_channel(channel, False)
+                if off_ms > 0:
+                    if self.dry_run:
+                        print(f"[DRY-RUN] (gap {off_ms} ms)")
+                    else:
+                        precise_sleep(off_ms / 1000.0)
 
     def __enter__(self):
         self.open()
